@@ -4,6 +4,7 @@ var gutil = require('gulp-util');
 var through = require('through2');
 var fs = require('fs');
 var Comb = require('csscomb');
+var diff = require('diff');
 
 module.exports = function (config, verbose) {
     var badFiles = [];
@@ -26,10 +27,14 @@ module.exports = function (config, verbose) {
 
         var comb = new Comb(getConfig(config, file, cb) || 'csscomb');
         var content = file.contents.toString('utf8');
-        var filename = path.relative(file.cwd, file.path)
+        var filename = path.relative(file.cwd, file.path);
+        var processedContent = comb.processString(content, { filename: file.path });
 
-        if (content === comb.processString(content, { filename: file.path })) {
-            badFiles.push(filename);
+        if (content !== processedContent) {
+            badFiles.push({
+                filename: filename,
+                diff: diff.createPatch(filename, content, processedContent)
+            });
         }
 
 
@@ -37,11 +42,16 @@ module.exports = function (config, verbose) {
         return cb();
     }, function(cb) {
 
+        var diff = badFiles.map(function(file) {
+                return file.diff;
+            }
+        ).join('\n\n');
+
         if (badFiles.length) {
-            var message = gutil.colors.red([
-                '\nCSScomb linting failed for these files:',
-                badFiles.map(function(filename) { return '• ' + filename; })
-            ].join('\n'));
+            var message = [
+                '\nCSScomb linting failed for these files:\n',
+                gutil.colors.red(diff)
+            ].join('\n');
 
             this.emit('error', new gutil.PluginError('gulp-csscomb-lint', message));
         }
